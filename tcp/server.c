@@ -111,7 +111,7 @@ static int tcpServer()
         pthread_create(&tid, NULL, thread_recv, &client_fd);
     }
     
-    close(client_fd);
+    close(server_fd);
     return 0;
 }
 
