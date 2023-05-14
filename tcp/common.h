@@ -7,7 +7,7 @@
 
 
 #define MAX_CONNECT_CNT      (5)
-#define SERVER_ADDRESS       "192.168.20.134"
+#define SERVER_ADDRESS       "192.168.20.137"
 #define SERVER_PORT          (8080)
 #define MAX_BUFFER_SIZE      (1024)
 #define CONNECT_SUCCESS     "You have conected the server!"
