@@ -134,6 +134,7 @@ static int tcpServer()
         }
     }
     
+    close(epoll_fd);
     close(server_fd);
     return 0;
 }
