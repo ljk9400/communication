@@ -7,9 +7,40 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/epoll.h>
-#include "../tcp/common.h"
+#include <errno.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
+#define MAX_CONNECT_CNT      (5)
+#define SERVER_ADDRESS       "192.168.20.137"
+#define SERVER_PORT          (8080)
+#define MAX_BUFFER_SIZE      (1024)
+#define CONNECT_SUCCESS     "You have conected the server!"
 
+// data transmission
+static ssize_t event_send(int sockFd, const char* buff, int len)
+{
+    ssize_t ret = send(sockFd, (const void *)buff, len, 0);
+    fprintf(stdout,"TCP fd:(%d) >> %s, len:%d, ret:%zd\n",sockFd, buff, len, ret);
+    if(ret == -1)
+    {
+        fprintf(stderr,"send errno %d!\n", errno);
+    }
+    return ret;
+}
+
+// Data receiving
+static ssize_t event_recv(int sockFd, char* buff, int len)
+{
+    ssize_t ret = recv(sockFd, (void *)buff, len, 0);
+    fprintf(stdout,"TCP fd:(%d) << %s, len:%zd\n",sockFd, buff, ret);
+   
+    if(ret == -1)
+    {
+        fprintf(stderr,"recv errno %d!\n", errno);
+    }
+    return ret;
+}
 
 
 static int run_flag = 1;
@@ -25,10 +56,13 @@ static int getAddress(int sockfd, int localfd, struct sockaddr_in client_sockadd
         fprintf(stdout, "LocalIP:%s, LocalPort:%hu\n", address_p, SERVER_PORT);
     } 
     fprintf(stdout, "RemoteIP:%s, RemotePort:%hu\n", inet_ntoa(client_sockaddr.sin_addr), ntohs(client_sockaddr.sin_port));
-    event_send(sockfd, CONNECT_SUCCESS, strlen(CONNECT_SUCCESS));
+    //event_send(sockfd, CONNECT_SUCCESS, strlen(CONNECT_SUCCESS));
    
     return 0;
 }
+
+#define CERT_FILE "/mnt/hgfs/SwapTmp/epoll-master/curl/demo1/server.crt"
+#define KEY_FILE "/mnt/hgfs/SwapTmp/epoll-master/curl/demo1/server.key"
 
 static int tcpServer() 
 {
@@ -81,6 +115,16 @@ static int tcpServer()
         exit(EXIT_FAILURE);
     }
 
+    // ssl
+    SSL_CTX *ctx;
+    SSL *ssl;
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+    ctx = SSL_CTX_new(SSLv23_server_method());
+    SSL_CTX_use_certificate_file(ctx, CERT_FILE, SSL_FILETYPE_PEM);
+    SSL_CTX_use_PrivateKey_file(ctx, KEY_FILE, SSL_FILETYPE_PEM);
+
     // 等待连接
     while (run_flag) 
     {
@@ -104,6 +148,9 @@ static int tcpServer()
                     perror("accept failed");
                     exit(EXIT_FAILURE);
                 }
+                ssl = SSL_new(ctx);
+                SSL_set_fd(ssl, client_fd);
+                SSL_accept(ssl);
                 
                 // 将新连接的 socket 添加到 epoll 实例中
                 event.events = EPOLLIN;
@@ -119,8 +166,13 @@ static int tcpServer()
             // 如果是已连接 socket 上有数据可读
             else {
                 // 读取数据
+               
                 char buffer[MAX_BUFFER_SIZE]={0};
                 ssize_t numbytes = event_recv(fd, buffer, MAX_BUFFER_SIZE);
+
+                SSL_shutdown(ssl);
+                SSL_free(ssl);
+                close(client_fd);
                 if (numbytes <= 0) {
                     // 发生错误或连接关闭，从 epoll 实例中移除该 socket
                     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
@@ -128,11 +180,14 @@ static int tcpServer()
                     printf("TCP server fd:(%d) client exit!\n", fd);
                 } else {
                     // 发送数据
-                    event_send(fd, buffer, strlen(buffer));
+                    //event_send(fd, buffer, strlen(buffer));
+                    //event_send(fd, "buffer", strlen("buffer"));
+                    close(fd);
                 }
             }
         }
     }
+    SSL_CTX_free(ctx);
     close(epoll_fd);
     close(server_fd);
     return 0;
